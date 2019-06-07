@@ -2,17 +2,18 @@
 
 ## Introduction
 
-Microsoft Azure DevOps (ADO) is a fully managed suite of tooling that empowers developers and operators to implement DevOps practices. The Docker Enterprise Platform can integrate with such services through the use of Azure Pipelines for automated building and deploying of container-based workloads. 
+Microsoft Azure DevOps (ADO) is a fully managed suite of tooling that empowers developers and operators to implement DevOps techniques. The [Docker Enterprise Platform](https://www.docker.com/products/docker-enterprise) integrates with ADO through the use of Azure Pipelines for automated building and deploying of container-based workloads. 
 
-This guide does not attempt to recreate the excellent Azure DevOps documentation available online, but will focus on integration points between the two systems.
+This guide does not attempt to recreate the excellent [Azure DevOps documentation](https://docs.microsoft.com/en-us/azure/devops) available online, but will focus on integration points between the two systems.
 
 ## Setting up Azure DevOps
 
-An Azure DevOps tenant is necessary to use the service. These accounts are available from a myriad of different sources from Microsoft Developer Network (MSDN) subscriptions, to simply signing up for a free account at `$URL`
+An Azure DevOps tenant is necessary to use the service. These accounts are available from a myriad of different sources from Microsoft Developer Network (MSDN) subscriptions, to simply [signing up](https://azure.microsoft.com/en-us/services/devops/) for a free account.
 
-Once a tenant is secured, create a Project to hold code and pipeline definitions.
 
 ### Creating a Project
+
+Once a tenant is secured, [create an Organization](https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/create-organization) and a Project to hold code and pipeline definitions.
 
 ### Configuring Source Control Management
 
@@ -20,11 +21,11 @@ Azure DevOps is capable of working with git repositories hosted in ADO itself, o
 
 Automated triggers can be used between the git repository and ADO, meaning that when a `git commit push` occurs then an ADO Pipeline can be automatically initiate. This effectively established a continuous integration (CI) capability for source code.
 
-Once the git repository is linked with ADO, ensure that the application has been commited.
+Once the git repository is linked with ADO, ensure that all application code has been commited.
 
 ## Building a Pipeline
 
-Pipelines in Azure DevOps define a series of steps the sequentially build, test, and package applications in various forms. 
+[Pipelines](https://docs.microsoft.com/en-us/azure/devops/pipelines/get-started/overview?view=azure-devops) in Azure DevOps define a series of steps the sequentially build, test, and package applications in various forms. 
 
 Pipelines can be generated via two techniques. The Classic experience is a GUI-driven wizard where boxes and dropdowns are completed with pipeline steps. This system has been largely replaced with a YAML-based system more inline with other offerings in the DevOps market. 
 
@@ -32,7 +33,7 @@ The YAML-based pipelines offer "pipelines as code" benefits, as they are commite
 
 ### Triggers
 
-Pipelines are initiated via triggers, which contain the logic that determines how and when a pipeline beings execution. Triggers can be configured in a variety of ways:
+Pipelines are initiated via [Triggers](https://docs.microsoft.com/en-us/azure/devops/pipelines/build/triggers), which contain the logic that determines how and when a pipeline beings execution. Triggers can be configured in a variety of ways:
 
 * **Manual** will require that an operator initiate a new build
 
@@ -45,14 +46,14 @@ Pipelines are initiated via triggers, which contain the logic that determines ho
       - master
     paths:
       include:
-      - moby/src/*
+      - app/src/*
   ```
 
 ### Pools
 
-When a build is triggered it is added to a queue for a given agent pool. The next available agent will then have the build assigned, and it will execute the pipeline steps.
+When a build is triggered it is added to a queue for a given [agent pool](https://docs.microsoft.com/en-us/azure/devops/pipelines/agents/pools-queues). The next available agent will then have the build assigned, and it will execute the pipeline steps.
 
-By default ADO uses a hosted agent pool where all servers are maintained by Microsoft. Alternatively, a pool of custom agents may also be used. Please see the Agents section for more detailed information on build agent setup.
+By default ADO uses a [hosted agent pool](https://docs.microsoft.com/en-us/azure/devops/pipelines/agents/hosted?view=azure-devops) where all servers are maintained by Microsoft. Alternatively, a pool of [custom agents](https://docs.microsoft.com/en-us/azure/devops/pipelines/agents/v2-linux?view=azure-devops) may also be used. Please see the Agents section for more detailed information on build agent setup.
 
 Using the Ubuntu-based hosted agent (which includes a Moby-based container runtime):
 
@@ -86,9 +87,10 @@ scripts:
 ```
 
 Build a Docker Image with a PowerShell scipt:
+
 ```yaml
 scripts:
-- script: |
+- powershell: |
     docker build `
       --tag $(DOCKER_REGISTRY_IMAGE):"$(git rev-parse --short HEAD)" `
       .\moby\pipeline
@@ -122,7 +124,7 @@ The mechanism to dynamically pass a value into a Dockerfile at `docker build` ti
 
 For example, to dynamically expose a port with in the Dockerfile we would adjust:
 
-```Dockerfile
+```dockerfile
 FROM mcr.microsoft.com/dotnet/core/sdk:2.1
 EXPOSE 80
 WORKDIR /app
@@ -130,7 +132,7 @@ WORKDIR /app
 
 to include an `ARG`
 
-```Dockerfile
+```dockerfile
 FROM mcr.microsoft.com/dotnet/core/sdk:2.1
 ARG DOCKER_IMAGE_PORT=80
 EXPOSE ${DOCKER_IMAGE_PORT}
@@ -139,27 +141,27 @@ WORKDIR /app
 
 Note that we set a default value by including `=80`; this value will be used if a dynamic value is not passed in at build time.
 
-A base image may also be made into a dynamic value, however the `ARG` must be placed outside of the `FROM` statement. For example to adjust:
+A base image may also be made into a dynamic value, however the `ARG` must be placed outside of the `FROM` statement. For example, to adjust the following Dockerfile:
 
-```Dockerfile
+```dockerfile
 FROM mcr.microsoft.com/dotnet/core/sdk:2.1
 EXPOSE 80
 WORKDIR /app
 ```
 
-would place the `ARG` at the beginning of the file:
+Place the `ARG` at the beginning of the file and use the variable name in the `FROM` statement:
 
-```Dockerfile
-ARG BASE_IMAGE_BUILD='mcr.microsoft.com/dotnet/core/sdk:2.1'
+```dockerfile
+ARG BASE_IMAGE='mcr.microsoft.com/dotnet/core/sdk:2.1'
 
-FROM ${BASE_IMAGE_BUILD}
+FROM ${BASE_IMAGE}
 EXPOSE 80
 WORKDIR /app
 ```
 
 Positioning the `ARG` outside of the `FROM` statement(s) places it in a higher scope than within any specific stage. 
 
-Using the `ARG` and `--build-arg` pattern is useful to easily patch a given image when improvements are made to its base image. Adjusting a build variable and initiating a build brings the newer base image tag in without requiring a code commit.
+Using the `ARG` and `--build-arg` pattern is useful to easily patch a given image when improvements are made to its base image. Adjusting a build variable and initiating a build brings the newer base image tag in without requiring a formal code commit.
 
 ### Labels
 
@@ -167,7 +169,7 @@ Metadata may be added to a Dockerfile via the `LABEL` keyword. Labels can help d
 
 Some common settings in Dockerfiles include:
 
-```Dockerfile
+```dockerfile
 FROM mcr.microsoft.com/dotnet/core/sdk:2.1
 LABEL IMAGE_OWNER='Moby Whale <mobyw@docker.com>'
 LABEL IMAGE_DEPARTMENT='Digital Marketing'
@@ -178,17 +180,16 @@ WORKDIR /app
 
 Combine `LABEL` with `ARG` to dynamically pass metadata values into an image at build time.
 
-```Dockerfile
+```dockerfile
 FROM mcr.microsoft.com/dotnet/core/sdk:2.1
 ARG COMMIT_ID=''
 LABEL GIT_COMMIT_ID=${COMMIT_ID}
 ```
 
-TODO: convert to powershell
-```bash
-docker build \
-  --build-arg COMMIT_ID="$(git rev-parse --short HEAD)" \
-  --tag $(DOCKER_REGISTRY_IMAGE):"$(BUILD_ID)" \
+```powershell
+docker build `
+  --build-arg COMMIT_ID="$(git rev-parse --short HEAD)" `
+  --tag $(DOCKER_REGISTRY_IMAGE):"$(git rev-parse --short HEAD)" `
   .
 ```
 
@@ -212,11 +213,11 @@ $ docker inspect moby:1
 
 ### Multi-Stage Builds
 
-Dockerfiles originally functioned as a single "stage", where all steps took place in the same context. All libraries and frameworks necessary for the Dockerfile to build had to be loaded in, bloating the size of the resulting images. Much of this image size was used during the build phase, but was not necessary for the application to properly run; for example after an application compiled it does not have to have the compiler or SDK within the image to run. 
+Dockerfiles originally functioned as a single "stage", where all steps took place in the same context. All libraries and frameworks necessary for the Dockerfile to build had to be loaded in, bloating the size of the resulting images. Much of this image size was used during the build phase, but was not necessary for the application to properly run; for example after an application compiles it does not necessarily have to have the compiler or SDK within the image to run. 
 
-The introduction of "multi-stage builds" introduced splitting out of individual "stages" within one physical Dockerfile. In a build system such as Azure DevOps, we can define a "builder" stage with a base layer containing all necessary compilation components, and then a second, lightweight "runtime" stage devoid of hefty SDKs and compilation tooling. This last stage becomes the built image, with the builder stage serving only as a temporary intermediary. 
+The introduction of "[multi-stage builds](https://docs.docker.com/develop/develop-images/multistage-build/)" introduced splitting out of individual "stages" within one physical Dockerfile. In a build system such as Azure DevOps, we can define a "builder" stage with a base layer containing all necessary compilation components, and then a second, lightweight "runtime" stage devoid of hefty SDKs and compilation tooling. This last stage becomes the built image, with the builder stage serving only as a temporary intermediary. 
 
-```Dockerfile
+```dockerfile
 #=======================================================
 # Stage 1: Use the larger SDK image to compile .NET code
 #=======================================================
