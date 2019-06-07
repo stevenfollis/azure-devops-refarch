@@ -1,0 +1,14 @@
+version: "3.3"
+services:
+  agent:
+    deploy:
+      replicas: 3
+    environment:
+      AZP_URL: '' 
+      AZP_TOKEN: '' 
+      AZP_POOL: ''
+    image: dtr.moby.com/se-stevenfollis/dockeragent:1
+    volumes:
+      - type: npipe
+        source: \\.\pipe\docker_engine
+        target: \\.\pipe\docker_engine

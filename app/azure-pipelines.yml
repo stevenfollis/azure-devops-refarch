@@ -1,0 +1,215 @@
+# ==================================================================
+# Environment variables utilized in this Pipeline:
+#
+# DOCKER_REGISTRY_FQDN: Base reference for Registry ex. dtr.moby.org
+# DOCKER_REGISTRY_USERNAME: Username for registry login
+# DOCKER_REGISTRY_TOKEN: Token/password used to log into registry
+# DOCKER_REGISTRY_IMAGE: Image reference ex. dtr.moby.org/moby/applicationA
+# DOCKER_CONTENT_TRUST_REPOSITORY_PASSPHRASE: Docker Content Trust variable
+# DOCKER_CONTENT_TRUST_ROOT_PASSPHRASE: Docker Content Trust variable
+# 
+# ==================================================================
+
+trigger:
+  branches:
+    include:
+    - master
+  paths:
+    include:
+    - pipelines/app/*
+
+stages:
+- stage: build
+  displayName: Build & Push Images
+  jobs:
+  - job: build_linux
+    displayName: 'Build Linux Container'
+    pool:
+      name: 'Shared SE - Linux'
+      demands:
+      - agent.os -equals Linux
+      - docker
+    variables:
+      DOCKER_REGISTRY_IMAGE: dtr.west.us.se.dckr.org/se-stevenfollis/techorama-be-2019
+      DOCKER_BASE_IMAGE_BUILD: dtr.west.us.se.dckr.org/official/dotnet-core-sdk:2.1
+      DOCKER_BASE_IMAGE_RUNTIME: dtr.west.us.se.dckr.org/official/dotnet-core-aspnet:2.1
+    steps:
+    - script: |
+        docker version
+      displayName: 'Get Docker Version'
+
+    - script: |
+        docker login $(DOCKER_REGISTRY_FQDN) \
+          --username $(DOCKER_REGISTRY_USERNAME) \
+          --password $(DOCKER_REGISTRY_TOKEN)
+      displayName: 'Login to Docker Trusted Registry'
+
+    - script: |
+        docker pull $(DOCKER_BASE_IMAGE_BUILD)
+        docker pull $(DOCKER_BASE_IMAGE_RUNTIME)
+      displayName: 'Pre-Pull Docker Images'
+      
+    - script: |
+        # Build Docker Image by passing in build time arguments
+        # Tags image based on the short git commit ID
+        docker build \
+          --build-arg BASE_IMAGE_BUILD=$(DOCKER_BASE_IMAGE_BUILD) \
+          --build-arg BASE_IMAGE_RUNTIME=$(DOCKER_BASE_IMAGE_RUNTIME) \
+          --tag $(DOCKER_REGISTRY_IMAGE):"$(git rev-parse --short HEAD)" \
+          ./pipelines/app/aspnetcore
+      displayName: 'Build Docker Image'
+
+    - task: DownloadSecureFile@1
+      inputs:
+        secureFile: 'ucp-bundle-azure-devops.zip'
+
+    - script: |
+        # Unzip Docker Client Bundle from UCP
+        unzip \
+          -d $(Agent.TempDirectory)/bundle \
+          $(Agent.TempDirectory)/ucp-bundle-azure-devops.zip
+        
+        # Load key for use with Docker Content Trust (DCT)
+        docker trust key load $(Agent.TempDirectory)/bundle/key.pem
+      displayName: 'Setup Docker Client Bundle'
+
+    - script: |
+        # Push image to Docker Trusted Registry and sign with DCT
+        # Makes use of environment variables
+        DOCKER_CONTENT_TRUST=1 \
+        docker push $(DOCKER_REGISTRY_IMAGE):"$(git rev-parse --short HEAD)"
+      displayName: 'Push Docker Image'
+
+    - script: |
+        # Remove built image
+        docker image rm $(DOCKER_REGISTRY_IMAGE):"$(git rev-parse --short HEAD)"
+
+        # Logout of Docker Trusted registry
+        docker logout
+      displayName: 'Tidy Up'
+
+  - job: build_windows
+    displayName: 'Build Windows Container'
+    pool:
+      name: 'Shared SE - Windows'
+      demands:
+      - agent.os -equals Windows_NT
+      - docker
+    variables:
+      DOCKER_BUILDKIT: 0
+      DOCKER_REGISTRY_IMAGE: dtr.west.us.se.dckr.org/se-stevenfollis/techorama-be-2019-windows
+    steps:
+    - powershell: |
+        Write-Host "Getting User";
+        whoami;
+      displayName: 'Get User'
+
+    - powershell: |
+        Write-Host "Getting Docker Version"
+        docker version;
+      displayName: 'Get Docker Version'
+
+    - powershell: |
+        # Login to the Docker Trusted Registry
+        docker login $(DOCKER_REGISTRY_FQDN) `
+          --username $(DOCKER_REGISTRY_USERNAME) `
+          --password $(DOCKER_REGISTRY_TOKEN);
+      displayName: 'Login to Docker Trusted Registry'
+      errorActionPreference: silentlyContinue
+
+    - powershell: |
+        docker build `
+          --file .\pipelines\app\aspnetcore\Dockerfile.nanoserver-sac1809 `
+          --tag $(DOCKER_REGISTRY_IMAGE):"$(git rev-parse --short HEAD)" `
+          .\pipelines\app\aspnetcore;
+      displayName: 'Build Docker Image'
+
+    - powershell: |
+        docker push $(DOCKER_REGISTRY_IMAGE):"$(git rev-parse --short HEAD)";
+      displayName: 'Push Docker Image'
+
+    - powershell: |
+        docker image rm $(DOCKER_REGISTRY_IMAGE):"$(git rev-parse --short HEAD)";
+      displayName: 'Tidy Up'
+
+  - job: create_multi_arch
+    dependsOn:
+    - build_linux
+    - build_windows
+    displayName: 'Create Multi-Architecture Manifest List'
+    pool:
+      name: 'Shared SE - Linux'
+      demands:
+      - agent.os -equals Linux
+      - docker
+    variables:
+      DOCKER_BUILDKIT: 1
+      DOCKER_CLI_EXPERIMENTAL: "enabled"
+      DOCKER_IMAGE_MULTI_ARCH: 'dtr.west.us.se.dckr.org/se-stevenfollis/techorama-be-2019-multiarch'
+      DOCKER_IMAGE_LINUX: 'dtr.west.us.se.dckr.org/se-stevenfollis/techorama-be-2019'
+      DOCKER_IMAGE_WINDOWS: 'dtr.west.us.se.dckr.org/se-stevenfollis/techorama-be-2019-windows'
+    steps:
+    - script: |
+        docker version
+      displayName: 'Get Docker Version'
+
+    - script: |
+        docker login $(DOCKER_REGISTRY_FQDN) \
+          --username $(DOCKER_REGISTRY_USERNAME) \
+          --password $(DOCKER_REGISTRY_TOKEN)
+      displayName: 'Login to Docker Trusted Registry'
+    
+    - script: |
+        docker manifest create \
+          $(DOCKER_IMAGE_MULTI_ARCH):"$(git rev-parse --short HEAD)" \
+          $(DOCKER_IMAGE_LINUX):"$(git rev-parse --short HEAD)" \
+          $(DOCKER_IMAGE_WINDOWS):"$(git rev-parse --short HEAD)"
+      displayName: 'Create Manifest List'
+
+    - script: |
+        docker manifest push \
+          $(DOCKER_IMAGE_MULTI_ARCH):"$(git rev-parse --short HEAD)" \
+          --purge
+      displayName: 'Push Manifest List'
+
+    - script: |
+        docker manifest inspect $(DOCKER_IMAGE_MULTI_ARCH):"$(git rev-parse --short HEAD)"
+      displayName: 'Inspect Manifest List'
+
+- stage: deploy
+  displayName: Deploy to Cluster
+  dependsOn:
+  - build
+  jobs:
+  - job: helm
+    displayName: 'Deploy Container with Helm'
+    pool:
+      name: 'Shared SE - Linux'
+      demands:
+      - agent.os -equals Linux
+      - docker
+    steps:
+    - task: DownloadSecureFile@1
+      inputs:
+        secureFile: 'ucp-bundle-azure-devops.zip'
+
+    - script: |
+        # Unzip Docker Client Bundle from UCP
+        unzip \
+          -d $(Agent.TempDirectory)/bundle \
+          $(Agent.TempDirectory)/ucp-bundle-azure-devops.zip
+      displayName: 'Setup Docker Client Bundle'
+
+    - script: |
+        # Connect Helm to cluster via Docker Client Bundle
+        cd $(Agent.TempDirectory)/bundle
+        eval "$(<env.sh)"
+
+        # Update deployment with Helm
+        cd $(Build.SourcesDirectory)
+        helm upgrade \
+          web \
+          ./pipelines/helm/techorama \
+          --set "image.tag=$(git rev-parse --short HEAD)" \
+          --tiller-namespace se-stevenfollis
+      displayName: 'Update application with Helm'
