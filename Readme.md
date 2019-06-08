@@ -1,3 +1,29 @@
+---
+title: Automation with Azure DevOps Reference Architecture for Docker Enterprise Edition
+summary: This Solution Brief documents how to integrate Azure DevOps with Docker Enterprise to enable continuous integration and continuous delivery practices
+type: refarch
+author: stevenfollis
+product:
+- ee
+testedon:
+- EE 2.0
+- EE 2.1
+- ee-17.06.2-ee-17
+- ee-18.09.00-ee
+- ucp-3.0.6
+- ucp-3.1.6
+- dtr-2.6.0
+- dtr-2.6.3
+platform:
+- linux
+- windows
+tags:
+- devops
+- azure
+- ci
+- cd
+---
+
 # Automating Docker Enterprise with Azure DevOps
 
 ## Introduction
@@ -21,15 +47,15 @@ Azure DevOps is capable of working with git repositories hosted in ADO itself, o
 
 Automated triggers can be used between the git repository and ADO, meaning that when a `git commit push` occurs then an ADO Pipeline can be automatically initiate. This effectively established a continuous integration (CI) capability for source code.
 
-Once the git repository is linked with ADO, ensure that all application code has been commited.
+Once the git repository is linked with ADO, ensure that all application code has been committed.
 
 ## Building a Pipeline
 
 [Pipelines](https://docs.microsoft.com/en-us/azure/devops/pipelines/get-started/overview?view=azure-devops) in Azure DevOps define a series of steps the sequentially build, test, and package applications in various forms. 
 
-Pipelines can be generated via two techniques. The Classic experience is a GUI-driven wizard where boxes and dropdowns are completed with pipeline steps. This system has been largely replaced with a YAML-based system more inline with other offerings in the DevOps market. 
+Pipelines can be generated via two techniques. The Classic experience is a GUI-driven wizard where boxes and dropdowns are completed with pipeline steps. This system has been largely replaced with a YAML-based system more in line with other offerings in the DevOps market. 
 
-The YAML-based pipelines offer "pipelines as code" benefits, as they are commited to source control and able to versioned and shared like any other file. This guide will focus on YAML-based pipelines.
+The YAML-based pipelines offer "pipelines as code" benefits, as they are committed to source control and able to versioned and shared like any other file. This guide will focus on YAML-based pipelines.
 
 ### Triggers
 
@@ -71,7 +97,7 @@ pool:
 
 ### Steps
 
-The steps within a pipeline define which actions are done to the source code. These actions may be defined as custom scripts, or configured via pre-built tasks.
+The steps within a pipeline define which actions are done to the source code. These actions may be defined as custom scripts or configured via pre-built tasks.
 
 Script blocks are used to run shell code as a pipeline step. For small scripts it is fine to place these inline within the YAML. For larger scripts consider creating a `scripts` directory within the code repository and creating dedicated `.sh`, `.ps1`, etc. files. These files may then be called from the pipeline step without cluttering the pipeline file.
 
@@ -86,7 +112,7 @@ scripts:
   displayName: 'Build Docker Image'
 ```
 
-Build a Docker Image with a PowerShell scipt:
+Build a Docker Image with a PowerShell script:
 
 ```yaml
 scripts:
@@ -97,28 +123,23 @@ scripts:
   displayName: 'Build Docker Image'
 ```
 
-Tasks are pre-built actions that can easily be integrated into a pipeline. A series of tasks are available out of the box from Microsoft, however the system is also extensible through the Visual Studio Marketplace community. 
+Tasks are pre-built actions that can easily be integrated into a pipeline. A series of tasks are available out of the box from Microsoft; however the system is also extensible through the Visual Studio Marketplace community. 
 
-Build a Docker Image with the Docker Task:
-
-```yaml
-scripts:
-- task: TODO
-```
+> Pre-built tasks for Docker and Kubernetes are available, however the typical brevity of the `docker` and `kubectl` command lines make the additional abstraction optional compared to use of simple `script` tasks
 
 ### Variables
 
-Dockerfiles are often static assets, requiring a developer to commit code changes to adjust its behavior. Hard-coded values also impede the ability to reuse a Dockerfile across multiple contexts or image variations. The Azure DevOps platform offers variables to be defined for a given Pipeline, radically increasing the flexbility of Dockerfiles by not requiring code changes to reuse a given file. 
+Dockerfiles are often static assets, requiring a developer to commit code changes to adjust its behavior. Hard-coded values also impede the ability to reuse a Dockerfile across multiple contexts or image variations. The Azure DevOps platform offers variables to be defined for a given Pipeline, radically increasing the flexibility of Dockerfiles by not requiring code changes to reuse a given file. 
 
-While variables may be named any value, it is recommended to decide upon a naming convention that promotes consistency and predictability. `DOCKER_` is one such convention prefix that clearly denotes that a variable is related to Docker. For example, `DOCKER_REGISTRY_USERNAME` would denote first that a value is related to Docker, that is is used to interact with a Registry, and that it contains an account username.
+While variables may be named any value, it is recommended to decide upon a naming convention that promotes consistency and predictability. `DOCKER_` is one such convention prefix that clearly denotes that a variable is related to Docker. For example, `DOCKER_REGISTRY_USERNAME` would denote first that a value is related to Docker, that it is used to interact with a Registry, and that it contains an account username.
 
-Values that may contain sensitive or secret information can make use of a Build Secret, rather than a Build Variable. When creating a variable, simply select the lock icon to convert the value to a secret. Secrets are not echo'd out in logs or allowed to be seen once set. Setting the password or token used to authenticate with a Docker Registry via a `DOCKER_REGISTRY_TOKEN` secret would be advisable instead of a variable.
+Values that may contain sensitive or secret information can make use of a Build Secret, rather than a Build Variable. When creating a variable, simply select the lock icon to convert the value to a secret. Secrets are not echoed out in logs or allowed to be seen once set. Setting the password or token used to authenticate with a Docker Registry via a `DOCKER_REGISTRY_TOKEN` secret would be advisable instead of a variable.
 
 ### Docker Enterprise Service Account
 
-Steps within an Azure DevOps Pipeline that require interaction with Docker Enterprise may use a service account model for clean separation between systems. In Universal Control Plane, a new user account may be created with a name such as `azure-devops` or similar that will serve as a service account. If using [LDAP](https://docs.docker.com/ee/ucp/admin/configure/external-auth/) or [SAML](https://docs.docker.com/ee/ucp/admin/configure/enable-saml-authentication/) integration with a directory such as Active Directory then create an account in the external system to be syncronized into UCP.
+Steps within an Azure DevOps Pipeline that require interaction with Docker Enterprise may use a service account model for clean separation between systems. In Universal Control Plane, a new user account may be created with a name such as `azure-devops` or similar that will serve as a service account. If using [LDAP](https://docs.docker.com/ee/ucp/admin/configure/external-auth/) or [SAML](https://docs.docker.com/ee/ucp/admin/configure/enable-saml-authentication/) integration with a directory such as Active Directory then create an account in the external system to be synchronized into UCP.
 
-![service account](./media/service-account.png)
+![service account](./images/service-account.png)
 
 This service account is then used whenever a pipeline needs to interact with Docker Enterprise. For example, to execute a `docker push` into Docker Trusted Registry, the pipeline must first authenticate against the registry with a `docker login`:
 
@@ -132,17 +153,17 @@ This service account is then used whenever a pipeline needs to interact with Doc
 
 In this example the `DOCKER_REGISTRY_USERNAME` refers to the service account's username, and the `DOCKER_REGISTRY_TOKEN` is an Access Token [generated from DTR](https://docs.docker.com/ee/dtr/user/access-tokens/) loaded into Azure DevOps as a Secret.
 
-User accounts in Docker Enterprise utilize granular, [role-based access controls (RBAC)](https://docs.docker.com/ee/ucp/authorization/) to ensure that only the proper account has access to a given DTR repository, set of UCP nodes, etc. The service account can be directly granted permissions for pertinent DTR repositories, or added to a UCP Group that inherits permissions. This system ensures that the service account has the least privileges necessary to conduct its tasks with Docker Enterprise.
+User accounts in Docker Enterprise utilize granular, [role-based access controls (RBAC)](https://docs.docker.com/ee/ucp/authorization/) to ensure that only the proper account has access to a given DTR repository, set of UCP nodes, etc. The service account can be directly granted permissions for pertinent DTR repositories or added to a UCP Group that inherits permissions. This system ensures that the service account has the least privileges necessary to conduct its tasks with Docker Enterprise.
 
 A Docker [Client Bundle](https://docs.docker.com/ee/ucp/user-access/cli/#download-client-certificates) can also be generated for this account, which can be used for continuous delivery tasks such as `docker stack deploy` or `helm upgrade`.
 
 ## Preparing a Dockerfile
 
-A developer working with a Dockerfile in their local environment has different requirements than a build automation system using the same file. A series of adjustments can optimize a Dockerfile for build performance, and enhance the flexibility of a file to be utilized in multiple build variations.
+A developer working with a Dockerfile in their local environment has different requirements than a build automation system using the same file. A series of adjustments can optimize a Dockerfile for build performance and enhance the flexibility of a file to be utilized in multiple build variations.
 
 ### Build Arguments
 
-The mechanism to dynamically pass a value into a Dockerfile at `docker build` time is the `--build-arg` flag. A variable or secret can be used with the flag to change a build outcome without commiting a code change into the source control system. To utilize the flag we add an `ARG` line to our DOckerfile for each variable to be passed. 
+The mechanism to dynamically pass a value into a Dockerfile at `docker build` time is the `--build-arg` flag. A variable or secret can be used with the flag to change a build outcome without committing a code change into the source control system. To utilize the flag, we add an `ARG` line to our Dockerfile for each variable to be passed. 
 
 For example, to dynamically expose a port with in the Dockerfile we would adjust:
 
@@ -484,7 +505,7 @@ Docker Content Trust works with a series of cryptographic certificates, and each
 
 Sensitive strings may be loaded into Azure DevOps' [Secrets](https://docs.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops#secret-variables) feature, however the Client Bundle is a zipped folder of certificates. To handle this sensitive file, the zipped Client Bundle file may be uploaded into the Azure DevOps [Secure File Library](https://docs.microsoft.com/en-us/azure/devops/pipelines/library/secure-files).
 
-![secure file library](./media/secure-file-library.png)
+![secure file library](./images/secure-file-library.png)
 
 When a Client Bundle needs to be revoked or cycled, delete the uploaded bundle from the library and upload a new file with fresh certificates. If the filename is identical then the Azure DevOps Pipeline does not need to be adjusted - it will use the new file.
 
@@ -521,7 +542,7 @@ Finally, the Docker Engine is set to use Docker Content Trust. In this example t
 
 During the `docker push` the image will be uploaded to Docker Trusted Registry (DTR), and then signed with the key loaded into the Engine. The **Signed** column in DTR will now reflect that a given tag is signed, and more information may be retrieved via the `docker trust inspect` command.
 
-![signed dtr images](./media/dtr-tags-signed.png)
+![signed dtr images](./images/dtr-tags-signed.png)
 
 ```json
 $ docker trust inspect dtr.moby.org/se-stevenfollis/moby:3a26dd5
@@ -583,7 +604,7 @@ Azure DevOps Pipelines may be used for both continuous integration, and for cont
 
 ### Deploying with Helm
 
-In the Kubernetes world, [Helm](https://helm.sh/) is a popular tool for deploying and managing the life cycle of container workloads. A Helm "Chart" is created via the `helm create` command, and then values are adjusted to match a given applciation's needs. Docker Enterprise is a CNCF Certified distribution of Kubernetes, and works seamlessly with Helm.
+In the Kubernetes world, [Helm](https://helm.sh/) is a popular tool for deploying and managing the life cycle of container workloads. A Helm "Chart" is created via the `helm create` command, and then values are adjusted to match a given application's needs. Docker Enterprise is a CNCF Certified distribution of Kubernetes and works seamlessly with Helm.
 
 Azure DevOps Pipelines can interface with Docker Enterprise via Helm by having the `kubectl` binary installed in the build agent. This command line tool is then further configured to work with UCP through a Docker Client Bundle, which establishes a secure connection context between `kubectl` and UCP. Once established, standard Helm commands may be issued to update a running Helm workload. 
 
