@@ -472,7 +472,110 @@ if (!$env:AZP_POOL) { $env:AZP_POOL='Default' }
 
 ## Signing Images with Docker Content Trust
 
+[Docker Content Trust (DCT)](https://docs.docker.com/engine/security/trust/content_trust/) is a security feature built into Docker Enterprise that enables Docker container images to be cryptographically signed. These signatures provide assurances that a given image was built within an organization, rather than sourced elsewhere. While a signed image is useful, a unique feature of Docker Enterprise is the ability to enforce policies within Universal Control Plane (UCP) that require only signed images to be scheduled onto the cluster.
+
+Container images may be signed by individual developers, or as a step within the continuous integration process. Azure DevOps Pipelines can execute image signing, typically with a service account created in Docker Enterprise. 
+
+Before integrating a Pipeline with DCT, ensure that pertinent repositories in Docker Trusted Registry have been initialized for DCT, and that the service account to be used has been delegated signing permissions.
+
 ### Using the Azure Pipelines Library
+
+Docker Content Trust works with a series of cryptographic certificates, and each user has a set of such certificate keys issued in a [Client Bundle](https://docs.docker.com/ee/ucp/user-access/cli/). Azure DevOps requires these keys to execute image signing, but the certificates are sensitive values that need protection. 
+
+Sensitive strings may be loaded into Azure DevOps' [Secrets](https://docs.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops#secret-variables) feature, however the Client Bundle is a zipped folder of certificates. To handle this sensitive file, the zipped Client Bundle file may be uploaded into the Azure DevOps [Secure File Library](https://docs.microsoft.com/en-us/azure/devops/pipelines/library/secure-files).
+
+![secure file library](./media/secure-file-library.png)
+
+When a Client Bundle needs to be revoked or cycled, delete the uploaded bundle from the library and upload a new file with fresh certificates. If the filename is identical then the Azure DevOps Pipeline does not need to be adjusted - it will use the new file.
+
+### Signing an Image
+
+The Secure File Library allows Azure DevOps to handle the security of the file, including a pre-built Pipeline task that enables easy transfer of the file into a build agent during Pipeline bulds. Pipeline authors do not have to handle the downloading and security handshake to retrieve the file, which simplifies the Pipeline logic. 
+
+Once the client bundle is downloaded, a step is needed to unzip the file (ensure that any self-hosted agents have the `unzip` package or similar installed). Once the files are unzipped, the `docker trust key load` command is used to load the service account's key into the Docker Engine. 
+
+Finally, the Docker Engine is set to use Docker Content Trust. In this example the configuration option is set with the `DOCKER_CONTENT_TRUST` variable (defined here inline but may be at a higher scoped level such as a `jobs` block) but alternatively this may be set [in the Docker Enterprise Engine configuration file](https://docs.docker.com/engine/security/trust/content_trust/#enabling-dct-within-the-docker-enterprise-engine).
+
+```yaml
+- task: DownloadSecureFile@1
+    inputs:
+      secureFile: 'ucp-bundle-azure-devops.zip'
+
+- script: |
+    # Unzip Docker Client Bundle from UCP
+    unzip \
+      -d $(Agent.TempDirectory)/bundle \
+      $(Agent.TempDirectory)/ucp-bundle-azure-devops.zip
+    
+    # Load key for use with Docker Content Trust (DCT)
+    docker trust key load $(Agent.TempDirectory)/bundle/key.pem
+  displayName: 'Setup Docker Client Bundle'
+
+- script: |
+    # Push image to Docker Trusted Registry and sign with DCT
+    # Makes use of environment variables
+    DOCKER_CONTENT_TRUST=1 \
+    docker push $(DOCKER_REGISTRY_IMAGE):"$(git rev-parse --short HEAD)"
+  displayName: 'Push Docker Image'
+```
+
+During the `docker push` the image will be uploaded to Docker Trusted Registry (DTR), and then signed with the key loaded into the Engine. The **Signed** column in DTR will now reflect that a given tag is signed, and more information may be retrieved via the `docker trust inspect` command.
+
+![signed dtr images](./media/dtr-tags-signed.png)
+
+```json
+$ docker trust inspect dtr.moby.org/se-stevenfollis/moby:3a26dd5
+[
+    {
+        "Name": "dtr.moby.org/se-stevenfollis/moby:3a26dd5",
+        "SignedTags": [
+            {
+                "SignedTag": "3a26dd5",
+                "Digest": "152c6e774c2d39df8da4f6901b4ee4979efe39fc25688cba24c4d39e019b246e",
+                "Signers": [
+                    "azuredevops"
+                ]
+            }
+        ],
+        "Signers": [
+            {
+                "Name": "stevenfollis",
+                "Keys": [
+                    {
+                        "ID": "a7d7f4d91b2489fe0a7561985401bd6959a925bbbbcfa822a257d8601dd4272b"
+                    }
+                ]
+            },
+            {
+                "Name": "azuredevops",
+                "Keys": [
+                    {
+                        "ID": "8d947f076173d5972095159eeedd5b0ab691159641b01e59214d8d943db04e1d"
+                    }
+                ]
+            }
+        ],
+        "AdministrativeKeys": [
+            {
+                "Name": "Root",
+                "Keys": [
+                    {
+                        "ID": "070edd256b81b1c046fe197b8e409999e86d8c587d36008a7f4db62501117623"
+                    }
+                ]
+            },
+            {
+                "Name": "Repository",
+                "Keys": [
+                    {
+                        "ID": "ef6dc1c0860ef0bb7157f8c4ec8141398940757bd2ba58654cc6ade978ae1ec1"
+                    }
+                ]
+            }
+        ]
+    }
+]
+```
 
 ## Deploying 
 
