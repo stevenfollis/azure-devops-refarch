@@ -579,11 +579,60 @@ $ docker trust inspect dtr.moby.org/se-stevenfollis/moby:3a26dd5
 
 ## Deploying 
 
+Azure DevOps Pipelines may be used for both continuous integration, and for continuous delivery processes. In the integration stage a Docker image was built and pushed into Docker Trusted Registry (DTR). Delivery takes the next step to schedule the image from DTR onto a cluster of servers managed by Universal Control Plane.
+
 ### Deploying with Helm
 
-### Deploying with Docker App
+In the Kubernetes world, [Helm](https://helm.sh/) is a popular tool for deploying and managing the life cycle of container workloads. A Helm "Chart" is created via the `helm create` command, and then values are adjusted to match a given applciation's needs. Docker Enterprise is a CNCF Certified distribution of Kubernetes, and works seamlessly with Helm.
+
+Azure DevOps Pipelines can interface with Docker Enterprise via Helm by having the `kubectl` binary installed in the build agent. This command line tool is then further configured to work with UCP through a Docker Client Bundle, which establishes a secure connection context between `kubectl` and UCP. Once established, standard Helm commands may be issued to update a running Helm workload. 
+
+In the following example, a formal `deploy` [stage](https://docs.microsoft.com/en-us/azure/devops/pipelines/process/stages) is created in the Azure DevOps Pipeline that depends on the successful completion of a `build` stage. A Client Bundle is then downloaded from the Azure DevOps [Secure File Library](https://docs.microsoft.com/en-us/azure/devops/pipelines/library/secure-files), unzipped, and sourced. The `helm upgrade` command then updates the declared image tag to the recently build tag from DTR with `--set "image.tag=$(git rev-parse --short HEAD)"`. Helm then gracefully handles the upgrade process for the running image.
+
+```yaml
+- stage: deploy
+  displayName: Deploy to Cluster
+  dependsOn:
+  - build
+  jobs:
+  - job: helm
+    displayName: 'Deploy Container with Helm'
+    pool:
+      name: 'Shared SE - Linux'
+      demands:
+      - agent.os -equals Linux
+      - docker
+    steps:
+    - task: DownloadSecureFile@1
+      inputs:
+        secureFile: 'ucp-bundle-azure-devops.zip'
+
+    - script: |
+        # Unzip Docker Client Bundle from UCP
+        unzip \
+          -d $(Agent.TempDirectory)/bundle \
+          $(Agent.TempDirectory)/ucp-bundle-azure-devops.zip
+      displayName: 'Setup Docker Client Bundle'
+
+    - script: |
+        # Connect Helm to cluster via Docker Client Bundle
+        cd $(Agent.TempDirectory)/bundle
+        eval "$(<env.sh)"
+
+        # Update deployment with Helm
+        cd $(Build.SourcesDirectory)
+        helm upgrade \
+          web \
+          ./pipelines/helm/techorama \
+          --set "image.tag=$(git rev-parse --short HEAD)" \
+          --tiller-namespace se-stevenfollis
+      displayName: 'Update application with Helm'
+```
 
 
-
-
+TODO
 - Initiate build from DTR via PAT & REST when new image is mirrored.
+
+- ToC
+
+- Docker Context
